@@ -26,38 +26,17 @@ def enviar_email(destinatario, asunto, cuerpo, remitente):
         print(f"Error al enviar email: {e}")
         return None
 
-# --- Filtro equilibrado y flexible ---
-def filtrar_anuncios(anuncios, tipo_vehiculo, modelos_cliente):
+# --- Filtro SOLO enlaces válidos ---
+def filtrar_anuncios(anuncios):
     anuncios_filtrados = []
-    modelos = [m.lower().strip() for m in modelos_cliente if m.strip()]
-    motos_kw = ["moto", "scooter", "pcx", "nmax", "yamaha", "honda", "f 900", "c 400", "xr", "cb", "mt", "nc"]
-    carros_kw = ["carro", "auto", "vehículo", "automóvil", "fiat", "toyota", "renault", "ford", "volkswagen", "bmw", "chevrolet", "civic", "sedán", "coupe", "mazda", "mercedes", "camioneta"]
     for a in anuncios:
         enlace = a.get("enlace", "")
-        titulo = a.get("titulo", "").lower()
-        origen = a.get("origen", "").lower()
         # Elimina enlaces rotos o mal formados
         if not enlace.startswith("http"):
             continue
         if "olx.pthttps" in enlace or "www.olx.pthttps" in enlace:
             continue
-        # Solo filtra por modelo si el usuario lo escribió
-        coincide_modelo = True
-        if modelos:
-            coincide_modelo = any(modelo in titulo or modelo in enlace for modelo in modelos)
-        if not coincide_modelo:
-            continue
-        # Filtra por tipo de vehículo, pero permite más flexibilidad
-        if tipo_vehiculo == "moto":
-            if (any(kw in titulo for kw in motos_kw) or "/motos/" in enlace or "/motociclos/" in enlace):
-                if not any(kw in titulo for kw in carros_kw):
-                    a["tipo"] = "Moto"
-                    anuncios_filtrados.append(a)
-        elif tipo_vehiculo == "carro":
-            if (any(kw in titulo for kw in carros_kw) or "/carros/" in enlace or "/automoveis/" in enlace or "/autos/" in enlace):
-                if not any(kw in titulo for kw in motos_kw):
-                    a["tipo"] = "Carro"
-                    anuncios_filtrados.append(a)
+        anuncios_filtrados.append(a)
     return anuncios_filtrados
 
 HTML = """
@@ -154,7 +133,6 @@ HTML = """
                     <table class="table table-striped table-hover mb-0">
                         <thead>
                             <tr>
-                                <th>Tipo</th>
                                 <th>Origen</th>
                                 <th>Título</th>
                                 <th>Precio</th>
@@ -165,7 +143,6 @@ HTML = """
                         <tbody>
                         {% for o in oportunidades %}
                             <tr>
-                                <td>{{ o.get('tipo', filtros.tipo_vehiculo|capitalize) }}</td>
                                 <td><span class="badge bg-info badge-source">{{ o['origen'] }}</span></td>
                                 <td>{{ o['titulo'] }}</td>
                                 <td>{{ o['precio'] }} €</td>
@@ -230,18 +207,15 @@ def home():
                  a.get('precio', 0) >= filtros["precio_minimo"] and
                  a.get('precio', 0) <= filtros["precio_maximo"] and
                  a.get('ano', 0) >= filtros["ano_minimo"]
-                ],
-                filtros["tipo_vehiculo"],
-                filtros_proc["modelos"]
+                ]
             )
             if filtros["notificar_email"] and filtros["cliente_email"] and oportunidades:
-                cuerpo = f"¡Se encontraron nuevas oportunidades de {filtros['tipo_vehiculo']}s!\n\n"
+                cuerpo = f"¡Se encontraron nuevas oportunidades!\n\n"
                 for o in oportunidades:
-                    tipo = o.get('tipo', filtros['tipo_vehiculo'].capitalize())
-                    cuerpo += f"- [{tipo}] {o['origen']}: {o['titulo']} | {o['precio']}€ | Año: {o['ano']} | {o['enlace']}\n"
+                    cuerpo += f"- {o['origen']}: {o['titulo']} | {o['precio']}€ | Año: {o['ano']} | {o['enlace']}\n"
                 enviar_email(
                     filtros["cliente_email"],
-                    f"Nuevas oportunidades de {filtros['tipo_vehiculo']}s encontradas",
+                    "Nuevas oportunidades encontradas",
                     cuerpo,
                     EMAIL_REMITENTE
                 )
