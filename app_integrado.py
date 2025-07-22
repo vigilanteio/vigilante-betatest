@@ -129,7 +129,8 @@ HTML = """
 def unir_resultados(olx, rest):
     return olx + rest
 
-def filtrar_anuncios(anuncios):
+def filtrar_enlaces_validos(anuncios):
+    # Solo elimina anuncios con enlaces malos
     anuncios_filtrados = []
     for a in anuncios:
         enlace = a.get("enlace", "")
@@ -175,12 +176,14 @@ def home():
         try:
             olx_resultados = olx_mod.buscar(filtros_proc)
             rest_resultados = rest_mod.buscar(filtros_proc)
-            oportunidades = filtrar_anuncios(unir_resultados(olx_resultados, rest_resultados))
-            if oportunidades:
-                oportunidades = [a for a in oportunidades if 
-                                 a.get('precio', 0) >= filtros["precio_minimo"] and
-                                 a.get('precio', 0) <= filtros["precio_maximo"] and
-                                 a.get('ano', 0) >= filtros["ano_minimo"]]
+            oportunidades = unir_resultados(olx_resultados, rest_resultados)
+            # Solo elimina anuncios con enlaces inválidos
+            oportunidades = filtrar_enlaces_validos(oportunidades)
+            # Filtra por precio y año
+            oportunidades = [a for a in oportunidades if 
+                a.get('precio', 0) >= filtros["precio_minimo"] and
+                a.get('precio', 0) <= filtros["precio_maximo"] and
+                a.get('ano', 0) >= filtros["ano_minimo"]]
             # Notifica por email solo si la casilla está marcada
             if filtros["notificar_email"] and filtros["cliente_email"] and oportunidades:
                 cuerpo = "¡Se encontraron nuevas oportunidades!\n\n"
