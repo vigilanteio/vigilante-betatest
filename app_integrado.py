@@ -3,13 +3,12 @@ from flask import Flask, render_template_string, request
 import sendgrid
 from sendgrid.helpers.mail import Mail
 
-# Cargar tus módulos de scraping
+# Cargar módulos de scraping
 olx_mod = importlib.import_module("app_Version2")
 rest_mod = importlib.import_module("app_Version30")
 
 app = Flask(__name__)
 
-# Configuración de correo SendGrid
 SENDGRID_API_KEY = "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"
 EMAIL_REMITENTE = "vigilante.io2025@gmail.com"
 
@@ -28,11 +27,14 @@ def enviar_email(destinatario, asunto, cuerpo, remitente):
         print(f"Error al enviar email: {e}")
         return None
 
-# --- Filtro y corrección de anuncios ---
-def filtrar_anuncios(anuncios, tipo_vehiculo):
+# --- Filtro estricto y corrección de anuncios ---
+def filtrar_anuncios(anuncios, tipo_vehiculo, modelos_cliente):
     anuncios_filtrados = []
+    modelos = [m.lower().strip() for m in modelos_cliente if m.strip()]
+    # Palabras clave para motos y carros
+    motos_kw = ["moto", "scooter", "pcx", "nmax", "yamaha", "honda", "f 900", "c 400", "xr", "cb", "mt", "nc"]
+    carros_kw = ["carro", "auto", "vehículo", "automóvil", "fiat", "toyota", "renault", "ford", "volkswagen", "bmw", "chevrolet", "civic", "sedán", "coupe", "mazda", "mercedes", "camioneta"]
     for a in anuncios:
-        # Verifica que el enlace sea válido y del tipo correcto
         enlace = a.get("enlace", "")
         titulo = a.get("titulo", "").lower()
         origen = a.get("origen", "").lower()
@@ -41,19 +43,21 @@ def filtrar_anuncios(anuncios, tipo_vehiculo):
             continue
         if "olx.pthttps" in enlace or "www.olx.pthttps" in enlace:
             continue
-        # 2. Filtra por tipo de vehículo
+        # 2. FILTRO POR MODELO DEL CLIENTE
+        coincide_modelo = any(modelo in titulo or modelo in enlace for modelo in modelos) if modelos else True
+        if not coincide_modelo:
+            continue
+        # 3. Filtra por tipo de vehículo y excluye palabras clave del otro tipo
         if tipo_vehiculo == "moto":
-            # Si el origen es OLX o Standvirtual y el enlace/título contiene palabras de moto
-            if ("moto" in titulo or "scooter" in titulo or "pcx" in titulo or "nmax" in titulo or "yamaha" in titulo or "honda" in titulo) or \
-               ("/motos/" in enlace or "/motociclos/" in enlace or "moto" in enlace):
-                a["tipo"] = "Moto"
-                anuncios_filtrados.append(a)
+            if (any(kw in titulo for kw in motos_kw) or "/motos/" in enlace or "/motociclos/" in enlace):
+                if not any(kw in titulo for kw in carros_kw):
+                    a["tipo"] = "Moto"
+                    anuncios_filtrados.append(a)
         elif tipo_vehiculo == "carro":
-            # Si el origen es OLX o Standvirtual y el enlace/título contiene palabras de carro
-            if ("carro" in titulo or "auto" in titulo or "vehículo" in titulo or "civic" in titulo or "fiat" in titulo or "toyota" in titulo or "renault" in titulo or "ford" in titulo or "volkswagen" in titulo or "bmw" in titulo or "chevrolet" in titulo) or \
-               ("/carros/" in enlace or "/automoveis/" in enlace or "/autos/" in enlace or "carro" in enlace):
-                a["tipo"] = "Carro"
-                anuncios_filtrados.append(a)
+            if (any(kw in titulo for kw in carros_kw) or "/carros/" in enlace or "/automoveis/" in enlace or "/autos/" in enlace):
+                if not any(kw in titulo for kw in motos_kw):
+                    a["tipo"] = "Carro"
+                    anuncios_filtrados.append(a)
     return anuncios_filtrados
 
 HTML = """
@@ -222,7 +226,15 @@ def home():
             olx_resultados = olx_mod.buscar(filtros_proc)
             rest_resultados = rest_mod.buscar(filtros_proc)
             todos = olx_resultados + rest_resultados
-            oportunidades = filtrar_anuncios(todos, filtros["tipo_vehiculo"])
+            oportunidades = filtrar_anuncios(
+                [a for a in todos if
+                 a.get('precio', 0) >= filtros["precio_minimo"] and
+                 a.get('precio', 0) <= filtros["precio_maximo"] and
+                 a.get('ano', 0) >= filtros["ano_minimo"]
+                ],
+                filtros["tipo_vehiculo"],
+                filtros_proc["modelos"]
+            )
             # Notifica por email SOLO si la casilla está marcada
             if filtros["notificar_email"] and filtros["cliente_email"] and oportunidades:
                 cuerpo = f"¡Se encontraron nuevas oportunidades de {filtros['tipo_vehiculo']}s!\n\n"
