@@ -14,7 +14,7 @@ HTML = """
 <html lang="es">
 <head>
     <meta charset="utf-8">
-    <title>Vigilante de Oportunidades - Motos</title>
+    <title>Vigilante de Oportunidades</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <style>
@@ -63,14 +63,7 @@ HTML = """
                 </div>
                 <div class="col-md-12">
                     <label class="form-label">Correo del cliente:</label>
-                    <input name="cliente_email" type="email" class="form-control" placeholder="cliente@email.com" value="{{ filtros.cliente_email }}">
-                </div>
-                <div class="col-md-12">
-                    <label class="form-label">¿Desea recibir notificaciones al correo?</label>
-                    <div class="form-check form-switch">
-                        <input name="notificar_email" class="form-check-input" type="checkbox" id="notificar_email" {% if filtros.notificar_email %}checked{% endif %}>
-                        <label class="form-check-label" for="notificar_email">Sí, enviarme oportunidades al correo</label>
-                    </div>
+                    <input name="cliente_email" type="email" class="form-control" placeholder="cliente@email.com" required value="{{ filtros.cliente_email }}">
                 </div>
                 <div class="col-md-12 d-grid gap-2">
                     <button type="submit" name="buscar" value="buscar" class="btn btn-primary py-2 fs-5">
@@ -129,18 +122,6 @@ HTML = """
 def unir_resultados(olx, rest):
     return olx + rest
 
-def filtrar_enlaces_validos(anuncios):
-    # Solo elimina anuncios con enlaces malos
-    anuncios_filtrados = []
-    for a in anuncios:
-        enlace = a.get("enlace", "")
-        if not enlace.startswith("http"):
-            continue
-        if "olx.pthttps" in enlace or "www.olx.pthttps" in enlace:
-            continue
-        anuncios_filtrados.append(a)
-    return anuncios_filtrados
-
 @app.route("/", methods=["GET", "POST"])
 def home():
     filtros = {
@@ -149,8 +130,7 @@ def home():
         "precio_maximo": 99999,
         "ano_minimo": 0,
         "palabras_clave": "",
-        "cliente_email": "",
-        "notificar_email": True
+        "cliente_email": ""
     }
     oportunidades = None
     error = ""
@@ -164,7 +144,6 @@ def home():
         filtros["ano_minimo"] = int(ano_minimo_val) if ano_minimo_val.strip() else 0
         filtros["palabras_clave"] = request.form.get("palabras_clave", "")
         filtros["cliente_email"] = request.form.get("cliente_email", "")
-        filtros["notificar_email"] = bool(request.form.get("notificar_email"))
 
         filtros_proc = {
             "modelos": [m.strip().lower() for m in filtros["modelos"].split(",") if m.strip()],
@@ -177,15 +156,8 @@ def home():
             olx_resultados = olx_mod.buscar(filtros_proc)
             rest_resultados = rest_mod.buscar(filtros_proc)
             oportunidades = unir_resultados(olx_resultados, rest_resultados)
-            # Solo elimina anuncios con enlaces inválidos
-            oportunidades = filtrar_enlaces_validos(oportunidades)
-            # Filtra por precio y año
-            oportunidades = [a for a in oportunidades if 
-                a.get('precio', 0) >= filtros["precio_minimo"] and
-                a.get('precio', 0) <= filtros["precio_maximo"] and
-                a.get('ano', 0) >= filtros["ano_minimo"]]
-            # Notifica por email solo si la casilla está marcada
-            if filtros["notificar_email"] and filtros["cliente_email"] and oportunidades:
+            # Notifica por email al cliente si hay resultados
+            if filtros["cliente_email"] and oportunidades:
                 cuerpo = "¡Se encontraron nuevas oportunidades!\n\n"
                 for o in oportunidades:
                     cuerpo += f"- {o['origen']}: {o['titulo']} | {o['precio']}€ | Año: {o['ano']} | {o['enlace']}\n"
