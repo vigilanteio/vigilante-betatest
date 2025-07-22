@@ -3,7 +3,6 @@ from flask import Flask, render_template_string, request
 import sendgrid
 from sendgrid.helpers.mail import Mail
 
-# Cargar módulos de scraping
 olx_mod = importlib.import_module("app_Version2")
 rest_mod = importlib.import_module("app_Version30")
 
@@ -27,27 +26,28 @@ def enviar_email(destinatario, asunto, cuerpo, remitente):
         print(f"Error al enviar email: {e}")
         return None
 
-# --- Filtro estricto y corrección de anuncios ---
+# --- Filtro equilibrado y flexible ---
 def filtrar_anuncios(anuncios, tipo_vehiculo, modelos_cliente):
     anuncios_filtrados = []
     modelos = [m.lower().strip() for m in modelos_cliente if m.strip()]
-    # Palabras clave para motos y carros
     motos_kw = ["moto", "scooter", "pcx", "nmax", "yamaha", "honda", "f 900", "c 400", "xr", "cb", "mt", "nc"]
     carros_kw = ["carro", "auto", "vehículo", "automóvil", "fiat", "toyota", "renault", "ford", "volkswagen", "bmw", "chevrolet", "civic", "sedán", "coupe", "mazda", "mercedes", "camioneta"]
     for a in anuncios:
         enlace = a.get("enlace", "")
         titulo = a.get("titulo", "").lower()
         origen = a.get("origen", "").lower()
-        # 1. Elimina anuncios con enlaces rotos o mal formados
+        # Elimina enlaces rotos o mal formados
         if not enlace.startswith("http"):
             continue
         if "olx.pthttps" in enlace or "www.olx.pthttps" in enlace:
             continue
-        # 2. FILTRO POR MODELO DEL CLIENTE
-        coincide_modelo = any(modelo in titulo or modelo in enlace for modelo in modelos) if modelos else True
+        # Solo filtra por modelo si el usuario lo escribió
+        coincide_modelo = True
+        if modelos:
+            coincide_modelo = any(modelo in titulo or modelo in enlace for modelo in modelos)
         if not coincide_modelo:
             continue
-        # 3. Filtra por tipo de vehículo y excluye palabras clave del otro tipo
+        # Filtra por tipo de vehículo, pero permite más flexibilidad
         if tipo_vehiculo == "moto":
             if (any(kw in titulo for kw in motos_kw) or "/motos/" in enlace or "/motociclos/" in enlace):
                 if not any(kw in titulo for kw in carros_kw):
@@ -222,7 +222,6 @@ def home():
             "palabras_clave": [p.strip().lower() for p in filtros["palabras_clave"].split(",") if p.strip()]
         }
         try:
-            # Buscar y unificar resultados
             olx_resultados = olx_mod.buscar(filtros_proc)
             rest_resultados = rest_mod.buscar(filtros_proc)
             todos = olx_resultados + rest_resultados
@@ -235,7 +234,6 @@ def home():
                 filtros["tipo_vehiculo"],
                 filtros_proc["modelos"]
             )
-            # Notifica por email SOLO si la casilla está marcada
             if filtros["notificar_email"] and filtros["cliente_email"] and oportunidades:
                 cuerpo = f"¡Se encontraron nuevas oportunidades de {filtros['tipo_vehiculo']}s!\n\n"
                 for o in oportunidades:
