@@ -2,13 +2,12 @@ import importlib
 from flask import Flask, render_template_string, request
 from email_utils import enviar_email
 
-olx_mod = importlib.import_module("app_Version2")   # Tu módulo de OLX
-rest_mod = importlib.import_module("app_Version30") # Tu módulo de Standvirtual/CustoJusto
+olx_mod = importlib.import_module("app_Version2")
+rest_mod = importlib.import_module("app_Version30")
 
 app = Flask(__name__)
 
 EMAIL_REMITENTE = "vigilante.io2025@gmail.com"
-EMAIL_PASSWORD = "S0p0rt32025="
 
 HTML = """
 <!doctype html>
@@ -37,14 +36,21 @@ HTML = """
 <div class="container">
     <div class="d-flex justify-content-between align-items-center my-3">
         <span class="brand">🔎 Vigilante de Oportunidades</span>
-        <span class="text-muted">Motos Portugal</span>
+        <span class="text-muted">Motos y Carros Portugal</span>
     </div>
     <div class="card filters-card">
         <div class="card-body">
             <form method="post" class="row g-3">
-                <div class="col-md-4 col-6">
+                <div class="col-md-3 col-6">
+                    <label class="form-label">Tipo de vehículo:</label>
+                    <select name="tipo_vehiculo" class="form-control">
+                        <option value="moto" {% if filtros.tipo_vehiculo == "moto" %}selected{% endif %}>Moto</option>
+                        <option value="carro" {% if filtros.tipo_vehiculo == "carro" %}selected{% endif %}>Carro</option>
+                    </select>
+                </div>
+                <div class="col-md-3 col-6">
                     <label class="form-label">Modelo(s):</label>
-                    <input name="modelos" class="form-control" placeholder="ej. PCX, NMAX" value="{{ filtros.modelos }}">
+                    <input name="modelos" class="form-control" placeholder="ej. PCX, NMAX, Civic" value="{{ filtros.modelos }}">
                 </div>
                 <div class="col-md-2 col-6">
                     <label class="form-label">Año mínimo:</label>
@@ -60,7 +66,7 @@ HTML = """
                 </div>
                 <div class="col-md-12">
                     <label class="form-label">Palabras clave (coma):</label>
-                    <input name="palabras_clave" class="form-control" placeholder="Ex: ABS, top case, baú" value="{{ filtros.palabras_clave }}">
+                    <input name="palabras_clave" class="form-control" placeholder="Ex: ABS, automático, baú" value="{{ filtros.palabras_clave }}">
                 </div>
                 <div class="col-md-12">
                     <label class="form-label">Correo del cliente:</label>
@@ -90,6 +96,7 @@ HTML = """
                     <table class="table table-striped table-hover mb-0">
                         <thead>
                             <tr>
+                                <th>Tipo</th>
                                 <th>Origen</th>
                                 <th>Título</th>
                                 <th>Precio</th>
@@ -100,6 +107,7 @@ HTML = """
                         <tbody>
                         {% for o in oportunidades %}
                             <tr>
+                                <td>{{ o.get('tipo', filtros.tipo_vehiculo|capitalize) }}</td>
                                 <td><span class="badge bg-info badge-source">{{ o['origen'] }}</span></td>
                                 <td>{{ o['titulo'] }}</td>
                                 <td>{{ o['precio'] }} €</td>
@@ -126,6 +134,7 @@ def unir_resultados(olx, rest):
 @app.route("/", methods=["GET", "POST"])
 def home():
     filtros = {
+        "tipo_vehiculo": "moto",
         "modelos": "pcx, nmax",
         "precio_minimo": 0,
         "precio_maximo": 99999,
@@ -136,6 +145,7 @@ def home():
     oportunidades = None
     error = ""
     if request.method == "POST":
+        filtros["tipo_vehiculo"] = request.form.get("tipo_vehiculo", "moto")
         filtros["modelos"] = request.form.get("modelos", "pcx, nmax")
         precio_minimo_val = request.form.get("precio_minimo", "0")
         filtros["precio_minimo"] = int(precio_minimo_val) if precio_minimo_val.strip() else 0
@@ -147,6 +157,7 @@ def home():
         filtros["cliente_email"] = request.form.get("cliente_email", "")
 
         filtros_proc = {
+            "tipo_vehiculo": filtros["tipo_vehiculo"],
             "modelos": [m.strip().lower() for m in filtros["modelos"].split(",") if m.strip()],
             "precio_minimo": filtros["precio_minimo"],
             "precio_maximo": filtros["precio_maximo"],
@@ -159,15 +170,15 @@ def home():
             oportunidades = unir_resultados(olx_resultados, rest_resultados)
             # Notifica por email al cliente si hay resultados
             if filtros["cliente_email"] and oportunidades:
-                cuerpo = "¡Se encontraron nuevas oportunidades!\n\n"
+                cuerpo = f"¡Se encontraron nuevas oportunidades de {filtros['tipo_vehiculo']}s!\n\n"
                 for o in oportunidades:
-                    cuerpo += f"- {o['origen']}: {o['titulo']} | {o['precio']}€ | Año: {o['ano']} | {o['enlace']}\n"
+                    tipo = o.get('tipo', filtros['tipo_vehiculo'].capitalize())
+                    cuerpo += f"- [{tipo}] {o['origen']}: {o['titulo']} | {o['precio']}€ | Año: {o['ano']} | {o['enlace']}\n"
                 enviar_email(
                     filtros["cliente_email"],
-                    "Nuevas oportunidades de motos encontradas",
+                    f"Nuevas oportunidades de {filtros['tipo_vehiculo']}s encontradas",
                     cuerpo,
-                    EMAIL_REMITENTE,
-                    EMAIL_PASSWORD
+                    EMAIL_REMITENTE
                 )
         except Exception as e:
             error = f"Error al buscar: {e}"
