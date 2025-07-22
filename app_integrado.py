@@ -1,11 +1,14 @@
 import importlib
 from flask import Flask, render_template_string, request
-import os
+from email_utils import enviar_email
 
-olx_mod = importlib.import_module("app_Version2")
-rest_mod = importlib.import_module("app_Version30")
+olx_mod = importlib.import_module("app_Version2")   # Tu módulo de OLX
+rest_mod = importlib.import_module("app_Version30") # Tu módulo de Standvirtual/CustoJusto
 
 app = Flask(__name__)
+
+EMAIL_REMITENTE = "vigilante.io2025@gmail.com"
+EMAIL_PASSWORD = "S0p0rt32025="
 
 HTML = """
 <!doctype html>
@@ -58,6 +61,10 @@ HTML = """
                 <div class="col-md-12">
                     <label class="form-label">Palabras clave (coma):</label>
                     <input name="palabras_clave" class="form-control" placeholder="Ex: ABS, top case, baú" value="{{ filtros.palabras_clave }}">
+                </div>
+                <div class="col-md-12">
+                    <label class="form-label">Correo del cliente:</label>
+                    <input name="cliente_email" type="email" class="form-control" placeholder="cliente@email.com" required value="{{ filtros.cliente_email }}">
                 </div>
                 <div class="col-md-12 d-grid gap-2">
                     <button type="submit" name="buscar" value="buscar" class="btn btn-primary py-2 fs-5">
@@ -123,7 +130,8 @@ def home():
         "precio_minimo": 0,
         "precio_maximo": 99999,
         "ano_minimo": 0,
-        "palabras_clave": ""
+        "palabras_clave": "",
+        "cliente_email": ""
     }
     oportunidades = None
     error = ""
@@ -136,6 +144,7 @@ def home():
         ano_minimo_val = request.form.get("ano_minimo", "0")
         filtros["ano_minimo"] = int(ano_minimo_val) if ano_minimo_val.strip() else 0
         filtros["palabras_clave"] = request.form.get("palabras_clave", "")
+        filtros["cliente_email"] = request.form.get("cliente_email", "")
 
         filtros_proc = {
             "modelos": [m.strip().lower() for m in filtros["modelos"].split(",") if m.strip()],
@@ -148,10 +157,23 @@ def home():
             olx_resultados = olx_mod.buscar(filtros_proc)
             rest_resultados = rest_mod.buscar(filtros_proc)
             oportunidades = unir_resultados(olx_resultados, rest_resultados)
+            # Notifica por email al cliente si hay resultados
+            if filtros["cliente_email"] and oportunidades:
+                cuerpo = "¡Se encontraron nuevas oportunidades!\n\n"
+                for o in oportunidades:
+                    cuerpo += f"- {o['origen']}: {o['titulo']} | {o['precio']}€ | Año: {o['ano']} | {o['enlace']}\n"
+                enviar_email(
+                    filtros["cliente_email"],
+                    "Nuevas oportunidades de motos encontradas",
+                    cuerpo,
+                    EMAIL_REMITENTE,
+                    EMAIL_PASSWORD
+                )
         except Exception as e:
             error = f"Error al buscar: {e}"
     return render_template_string(HTML, oportunidades=oportunidades, filtros=filtros, error=error)
 
 if __name__ == "__main__":
+    import os
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port, debug=True)
