@@ -1,43 +1,13 @@
 import importlib
 from flask import Flask, render_template_string, request
-import sendgrid
-from sendgrid.helpers.mail import Mail
+from email_utils import enviar_email
 
 olx_mod = importlib.import_module("app_Version2")
 rest_mod = importlib.import_module("app_Version30")
 
 app = Flask(__name__)
 
-SENDGRID_API_KEY = "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"
 EMAIL_REMITENTE = "vigilante.io2025@gmail.com"
-
-def enviar_email(destinatario, asunto, cuerpo, remitente):
-    sg = sendgrid.SendGridAPIClient(api_key=SENDGRID_API_KEY)
-    message = Mail(
-        from_email=remitente,
-        to_emails=destinatario,
-        subject=asunto,
-        plain_text_content=cuerpo
-    )
-    try:
-        response = sg.send(message)
-        return response.status_code
-    except Exception as e:
-        print(f"Error al enviar email: {e}")
-        return None
-
-# --- Filtro SOLO enlaces válidos ---
-def filtrar_anuncios(anuncios):
-    anuncios_filtrados = []
-    for a in anuncios:
-        enlace = a.get("enlace", "")
-        # Elimina enlaces rotos o mal formados
-        if not enlace.startswith("http"):
-            continue
-        if "olx.pthttps" in enlace or "www.olx.pthttps" in enlace:
-            continue
-        anuncios_filtrados.append(a)
-    return anuncios_filtrados
 
 HTML = """
 <!doctype html>
@@ -66,21 +36,14 @@ HTML = """
 <div class="container">
     <div class="d-flex justify-content-between align-items-center my-3">
         <span class="brand">🔎 Vigilante de Oportunidades</span>
-        <span class="text-muted">Motos y Carros Portugal</span>
+        <span class="text-muted">Motos Portugal</span>
     </div>
     <div class="card filters-card">
         <div class="card-body">
             <form method="post" class="row g-3">
-                <div class="col-md-3 col-6">
-                    <label class="form-label">Tipo de vehículo:</label>
-                    <select name="tipo_vehiculo" class="form-control">
-                        <option value="moto" {% if filtros.tipo_vehiculo == "moto" %}selected{% endif %}>Moto</option>
-                        <option value="carro" {% if filtros.tipo_vehiculo == "carro" %}selected{% endif %}>Carro</option>
-                    </select>
-                </div>
-                <div class="col-md-3 col-6">
+                <div class="col-md-4 col-6">
                     <label class="form-label">Modelo(s):</label>
-                    <input name="modelos" class="form-control" placeholder="ej. PCX, NMAX, Civic" value="{{ filtros.modelos }}">
+                    <input name="modelos" class="form-control" placeholder="ej. PCX, NMAX" value="{{ filtros.modelos }}">
                 </div>
                 <div class="col-md-2 col-6">
                     <label class="form-label">Año mínimo:</label>
@@ -96,18 +59,11 @@ HTML = """
                 </div>
                 <div class="col-md-12">
                     <label class="form-label">Palabras clave (coma):</label>
-                    <input name="palabras_clave" class="form-control" placeholder="Ex: ABS, automático, baú" value="{{ filtros.palabras_clave }}">
+                    <input name="palabras_clave" class="form-control" placeholder="Ex: ABS, top case, baú" value="{{ filtros.palabras_clave }}">
                 </div>
                 <div class="col-md-12">
                     <label class="form-label">Correo del cliente:</label>
-                    <input name="cliente_email" type="email" class="form-control" placeholder="cliente@email.com" value="{{ filtros.cliente_email }}">
-                </div>
-                <div class="col-md-12">
-                    <label class="form-label">¿Desea recibir notificaciones al correo?</label>
-                    <div class="form-check form-switch">
-                        <input name="notificar_email" class="form-check-input" type="checkbox" id="notificar_email" {% if filtros.notificar_email %}checked{% endif %}>
-                        <label class="form-check-label" for="notificar_email">Sí, enviarme oportunidades al correo</label>
-                    </div>
+                    <input name="cliente_email" type="email" class="form-control" placeholder="cliente@email.com" required value="{{ filtros.cliente_email }}">
                 </div>
                 <div class="col-md-12 d-grid gap-2">
                     <button type="submit" name="buscar" value="buscar" class="btn btn-primary py-2 fs-5">
@@ -163,22 +119,22 @@ HTML = """
 </html>
 """
 
+def unir_resultados(olx, rest):
+    return olx + rest
+
 @app.route("/", methods=["GET", "POST"])
 def home():
     filtros = {
-        "tipo_vehiculo": "moto",
         "modelos": "pcx, nmax",
         "precio_minimo": 0,
         "precio_maximo": 99999,
         "ano_minimo": 0,
         "palabras_clave": "",
-        "cliente_email": "",
-        "notificar_email": True
+        "cliente_email": ""
     }
     oportunidades = None
     error = ""
     if request.method == "POST":
-        filtros["tipo_vehiculo"] = request.form.get("tipo_vehiculo", "moto")
         filtros["modelos"] = request.form.get("modelos", "pcx, nmax")
         precio_minimo_val = request.form.get("precio_minimo", "0")
         filtros["precio_minimo"] = int(precio_minimo_val) if precio_minimo_val.strip() else 0
@@ -188,10 +144,8 @@ def home():
         filtros["ano_minimo"] = int(ano_minimo_val) if ano_minimo_val.strip() else 0
         filtros["palabras_clave"] = request.form.get("palabras_clave", "")
         filtros["cliente_email"] = request.form.get("cliente_email", "")
-        filtros["notificar_email"] = bool(request.form.get("notificar_email"))
 
         filtros_proc = {
-            "tipo_vehiculo": filtros["tipo_vehiculo"],
             "modelos": [m.strip().lower() for m in filtros["modelos"].split(",") if m.strip()],
             "precio_minimo": filtros["precio_minimo"],
             "precio_maximo": filtros["precio_maximo"],
@@ -201,21 +155,15 @@ def home():
         try:
             olx_resultados = olx_mod.buscar(filtros_proc)
             rest_resultados = rest_mod.buscar(filtros_proc)
-            todos = olx_resultados + rest_resultados
-            oportunidades = filtrar_anuncios(
-                [a for a in todos if
-                 a.get('precio', 0) >= filtros["precio_minimo"] and
-                 a.get('precio', 0) <= filtros["precio_maximo"] and
-                 a.get('ano', 0) >= filtros["ano_minimo"]
-                ]
-            )
-            if filtros["notificar_email"] and filtros["cliente_email"] and oportunidades:
-                cuerpo = f"¡Se encontraron nuevas oportunidades!\n\n"
+            oportunidades = unir_resultados(olx_resultados, rest_resultados)
+            # Notifica por email al cliente si hay resultados
+            if filtros["cliente_email"] and oportunidades:
+                cuerpo = "¡Se encontraron nuevas oportunidades!\n\n"
                 for o in oportunidades:
                     cuerpo += f"- {o['origen']}: {o['titulo']} | {o['precio']}€ | Año: {o['ano']} | {o['enlace']}\n"
                 enviar_email(
                     filtros["cliente_email"],
-                    "Nuevas oportunidades encontradas",
+                    "Nuevas oportunidades de motos encontradas",
                     cuerpo,
                     EMAIL_REMITENTE
                 )
