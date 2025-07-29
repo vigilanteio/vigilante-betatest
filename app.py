@@ -1,9 +1,8 @@
 import importlib
-from flask import Flask, render_template_string, request
+from flask import Flask, render_template_string, request, redirect, url_for
 from email_utils import enviar_email
 
-olx_mod = importlib.import_module("app_Version2")
-rest_mod = importlib.import_module("app_Version30")
+scrapers_mod = importlib.import_module("scrapers")
 
 app = Flask(__name__)
 
@@ -14,7 +13,7 @@ HTML = """
 <html lang="es">
 <head>
     <meta charset="utf-8">
-    <title>Vigilante de Oportunidades</title>
+    <title>Vigilante de Oportunidades - {{ vehicle_type|capitalize }}</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <style>
@@ -25,6 +24,7 @@ HTML = """
         .filters-card { margin-top:2rem; box-shadow:0 3px 12px #0001; }
         .badge-source { font-size: 0.9em;}
         .toast-container { position:fixed; top:1rem; right:1rem; z-index:9999;}
+        .nav-pills .nav-link.active { background-color: #0d6efd; }
         @media (max-width: 600px) {
             .brand { font-size:1.3rem; }
             .filters-card { margin-top:1rem; }
@@ -36,14 +36,23 @@ HTML = """
 <div class="container">
     <div class="d-flex justify-content-between align-items-center my-3">
         <span class="brand">🔎 Vigilante de Oportunidades</span>
-        <span class="text-muted">Motos Portugal</span>
     </div>
+
+    <ul class="nav nav-pills nav-fill">
+        <li class="nav-item">
+            <a class="nav-link {% if vehicle_type == 'motos' %}active{% endif %}" href="/motos">Motos</a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link {% if vehicle_type == 'autos' %}active{% endif %}" href="/autos">Autos</a>
+        </li>
+    </ul>
+
     <div class="card filters-card">
         <div class="card-body">
             <form method="post" class="row g-3">
                 <div class="col-md-4 col-6">
                     <label class="form-label">Modelo(s):</label>
-                    <input name="modelos" class="form-control" placeholder="ej. PCX, NMAX" value="{{ filtros.modelos }}">
+                    <input name="modelos" class="form-control" placeholder="{{ 'ej. PCX, NMAX' if vehicle_type == 'motos' else 'ej. Civic, Corolla, Fiat 500' }}" value="{{ filtros.modelos }}">
                 </div>
                 <div class="col-md-2 col-6">
                     <label class="form-label">Año mínimo:</label>
@@ -59,11 +68,18 @@ HTML = """
                 </div>
                 <div class="col-md-12">
                     <label class="form-label">Palabras clave (coma):</label>
-                    <input name="palabras_clave" class="form-control" placeholder="Ex: ABS, top case, baú" value="{{ filtros.palabras_clave }}">
+                    <input name="palabras_clave" class="form-control" placeholder="{{ 'Ex: ABS, top case, baú' if vehicle_type == 'motos' else 'Ex: automático, sedán, baúl' }}" value="{{ filtros.palabras_clave }}">
                 </div>
                 <div class="col-md-12">
                     <label class="form-label">Correo del cliente:</label>
-                    <input name="cliente_email" type="email" class="form-control" placeholder="cliente@email.com" required value="{{ filtros.cliente_email }}">
+                    <input name="cliente_email" type="email" class="form-control" placeholder="cliente@email.com" value="{{ filtros.cliente_email }}">
+                </div>
+                <div class="col-md-12">
+                    <label class="form-label">¿Desea recibir notificaciones al correo?</label>
+                    <div class="form-check form-switch">
+                        <input name="notificar_email" class="form-check-input" type="checkbox" id="notificar_email" {% if filtros.notificar_email %}checked{% endif %}>
+                        <label class="form-check-label" for="notificar_email">Sí, enviarme oportunidades al correo</label>
+                    </div>
                 </div>
                 <div class="col-md-12 d-grid gap-2">
                     <button type="submit" name="buscar" value="buscar" class="btn btn-primary py-2 fs-5">
@@ -119,23 +135,34 @@ HTML = """
 </html>
 """
 
-def unir_resultados(olx, rest):
-    return olx + rest
+def unir_resultados(*resultados):
+    return [item for sublist in resultados for item in sublist]
 
-@app.route("/", methods=["GET", "POST"])
-def home():
+@app.route("/")
+def index():
+    return redirect(url_for("search", vehicle_type="motos"))
+
+@app.route("/<vehicle_type>", methods=["GET", "POST"])
+def search(vehicle_type):
+    if vehicle_type not in ["motos", "autos"]:
+        return "Tipo de vehículo no válido", 404
+
+    default_models = "pcx, nmax" if vehicle_type == "motos" else "civic, corolla, fiat 500"
+
     filtros = {
-        "modelos": "pcx, nmax",
+        "modelos": default_models,
         "precio_minimo": 0,
         "precio_maximo": 99999,
         "ano_minimo": 0,
         "palabras_clave": "",
-        "cliente_email": ""
+        "cliente_email": "",
+        "notificar_email": True
     }
     oportunidades = None
     error = ""
+
     if request.method == "POST":
-        filtros["modelos"] = request.form.get("modelos", "pcx, nmax")
+        filtros["modelos"] = request.form.get("modelos", default_models)
         precio_minimo_val = request.form.get("precio_minimo", "0")
         filtros["precio_minimo"] = int(precio_minimo_val) if precio_minimo_val.strip() else 0
         precio_maximo_val = request.form.get("precio_maximo", "99999")
@@ -144,32 +171,34 @@ def home():
         filtros["ano_minimo"] = int(ano_minimo_val) if ano_minimo_val.strip() else 0
         filtros["palabras_clave"] = request.form.get("palabras_clave", "")
         filtros["cliente_email"] = request.form.get("cliente_email", "")
+        filtros["notificar_email"] = bool(request.form.get("notificar_email"))
 
         filtros_proc = {
             "modelos": [m.strip().lower() for m in filtros["modelos"].split(",") if m.strip()],
             "precio_minimo": filtros["precio_minimo"],
             "precio_maximo": filtros["precio_maximo"],
             "ano_minimo": filtros["ano_minimo"],
-            "palabras_clave": [p.strip().lower() for p in filtros["palabras_clave"].split(",") if p.strip()]
+            "palabras_clave": [p.strip().lower() for p in filtros["palabras_clave"].split(",") if p.strip()],
+            "vehicle_type": vehicle_type
         }
         try:
-            olx_resultados = olx_mod.buscar(filtros_proc)
-            rest_resultados = rest_mod.buscar(filtros_proc)
-            oportunidades = unir_resultados(olx_resultados, rest_resultados)
-            # Notifica por email al cliente si hay resultados
-            if filtros["cliente_email"] and oportunidades:
-                cuerpo = "¡Se encontraron nuevas oportunidades!\n\n"
+            resultados = scrapers_mod.buscar(filtros_proc)
+            oportunidades = unir_resultados(resultados)
+
+            if filtros["notificar_email"] and filtros["cliente_email"] and oportunidades:
+                cuerpo = f"¡Se encontraron nuevas oportunidades de {vehicle_type}!\n\n"
                 for o in oportunidades:
                     cuerpo += f"- {o['origen']}: {o['titulo']} | {o['precio']}€ | Año: {o['ano']} | {o['enlace']}\n"
                 enviar_email(
                     filtros["cliente_email"],
-                    "Nuevas oportunidades de motos encontradas",
+                    f"Nuevas oportunidades de {vehicle_type} encontradas",
                     cuerpo,
                     EMAIL_REMITENTE
                 )
         except Exception as e:
             error = f"Error al buscar: {e}"
-    return render_template_string(HTML, oportunidades=oportunidades, filtros=filtros, error=error)
+
+    return render_template_string(HTML, oportunidades=oportunidades, filtros=filtros, error=error, vehicle_type=vehicle_type)
 
 if __name__ == "__main__":
     import os

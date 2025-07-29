@@ -1,10 +1,13 @@
 import sendgrid
 from sendgrid.helpers.mail import Mail
-
-SENDGRID_API_KEY = "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"
+import os
 
 def enviar_email(destinatario, asunto, cuerpo, remitente):
-    sg = sendgrid.SendGridAPIClient(api_key=SENDGRID_API_KEY)
+    api_key = os.environ.get("SENDGRID_API_KEY")
+    if not api_key:
+        print("Error: La variable de entorno SENDGRID_API_KEY no está configurada.")
+        return None
+    sg = sendgrid.SendGridAPIClient(api_key=api_key)
     message = Mail(
         from_email=remitente,
         to_emails=destinatario,
